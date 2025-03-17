@@ -25,7 +25,10 @@ from datasets import build_dataset, get_coco_api_from_dataset
 from engine import evaluate, train_one_epoch
 from models import build_model
 
-
+# the parameter of two_stage in pycharm
+# --output_dir exps/r50_deformable_detr_plus_iterative_bbox_refinement_plus_plus_two_stage
+# --with_box_refine
+# --two_stage
 def get_args_parser():
     parser = argparse.ArgumentParser('Deformable DETR Detector', add_help=False)
     parser.add_argument('--lr', default=2e-4, type=float)
@@ -35,6 +38,7 @@ def get_args_parser():
     # 线性投影层的学习率作用范围，指定需要特殊学习率的线性投影层
     parser.add_argument('--lr_linear_proj_names', default=['reference_points', 'sampling_offsets'], type=str, nargs='+')
     # 线性投影层学习率倍数，将基础学习率乘以该值作为线性投影层的学习率
+    # lr_linear_proj = lr_linear_proj_names * lr_linear_proj_mult
     parser.add_argument('--lr_linear_proj_mult', default=0.1, type=float)
     parser.add_argument('--batch_size', default=2, type=int)
     parser.add_argument('--weight_decay', default=1e-4, type=float)
@@ -79,7 +83,7 @@ def get_args_parser():
     # transformer中全连接神经网络隐藏层的大小
     parser.add_argument('--dim_feedforward', default=1024, type=int,
                         help="Intermediate size of the feedforward layers in the transformer blocks")
-    parser.add_argument('--hidden_dim', default=256, type=int,
+    parser.add_argument('--hidden_dim', default=256, type=int, # transformer中的 d_model，隐藏维度
                         help="Size of the embeddings (dimension of the transformer)")
     parser.add_argument('--dropout', default=0.1, type=float,
                         help="Dropout applied in the transformer")
@@ -87,6 +91,7 @@ def get_args_parser():
                         help="Number of attention heads inside the transformer's attentions")
     parser.add_argument('--num_queries', default=300, type=int,
                         help="Number of query slots")
+    # 这个参数没懂是干啥的
     parser.add_argument('--dec_n_points', default=4, type=int)
     parser.add_argument('--enc_n_points', default=4, type=int)
 
