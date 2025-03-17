@@ -29,19 +29,24 @@ from models import build_model
 def get_args_parser():
     parser = argparse.ArgumentParser('Deformable DETR Detector', add_help=False)
     parser.add_argument('--lr', default=2e-4, type=float)
+    # # 指定哪些骨干网络层需要单独设置学习率
     parser.add_argument('--lr_backbone_names', default=["backbone.0"], type=str, nargs='+')
     parser.add_argument('--lr_backbone', default=2e-5, type=float)
+    # 线性投影层的学习率作用范围，指定需要特殊学习率的线性投影层
     parser.add_argument('--lr_linear_proj_names', default=['reference_points', 'sampling_offsets'], type=str, nargs='+')
+    # 线性投影层学习率倍数，将基础学习率乘以该值作为线性投影层的学习率
     parser.add_argument('--lr_linear_proj_mult', default=0.1, type=float)
     parser.add_argument('--batch_size', default=2, type=int)
     parser.add_argument('--weight_decay', default=1e-4, type=float)
     parser.add_argument('--epochs', default=50, type=int)
+    # 学习率衰减的轮数（旧版），在第 lr_drop 轮后将学习率降低为原来的 1/10
     parser.add_argument('--lr_drop', default=40, type=int)
+    # 学习率衰减的轮数列表（新版），指定多个轮数点进行学习率衰减
     parser.add_argument('--lr_drop_epochs', default=None, type=int, nargs='+')
     parser.add_argument('--clip_max_norm', default=0.1, type=float,
                         help='gradient clipping max norm')
 
-
+    # 是否使用 SGD 优化器（默认使用 AdamW）
     parser.add_argument('--sgd', action='store_true')
 
     # Variants of Deformable DETR
@@ -49,16 +54,19 @@ def get_args_parser():
     parser.add_argument('--two_stage', default=False, action='store_true')
 
     # Model parameters
+    # 冻结权重的路径，若指定，仅训练掩码头
     parser.add_argument('--frozen_weights', type=str, default=None,
                         help="Path to the pretrained model. If set, only the mask head will be trained")
 
     # * Backbone
     parser.add_argument('--backbone', default='resnet50', type=str,
                         help="Name of the convolutional backbone to use")
+    # 是否在骨干网络最后阶段使用空洞卷积
     parser.add_argument('--dilation', action='store_true',
                         help="If true, we replace stride with dilation in the last convolutional block (DC5)")
     parser.add_argument('--position_embedding', default='sine', type=str, choices=('sine', 'learned'),
                         help="Type of positional embedding to use on top of the image features")
+    # 位置编码的缩放因子，控制位置编码的范围。
     parser.add_argument('--position_embedding_scale', default=2 * np.pi, type=float,
                         help="position / size * scale")
     parser.add_argument('--num_feature_levels', default=4, type=int, help='number of feature levels')
@@ -68,6 +76,7 @@ def get_args_parser():
                         help="Number of encoding layers in the transformer")
     parser.add_argument('--dec_layers', default=6, type=int,
                         help="Number of decoding layers in the transformer")
+    # transformer中全连接神经网络隐藏层的大小
     parser.add_argument('--dim_feedforward', default=1024, type=int,
                         help="Intermediate size of the feedforward layers in the transformer blocks")
     parser.add_argument('--hidden_dim', default=256, type=int,
@@ -82,33 +91,45 @@ def get_args_parser():
     parser.add_argument('--enc_n_points', default=4, type=int)
 
     # * Segmentation
+    # 是否训练分割头
     parser.add_argument('--masks', action='store_true',
                         help="Train segmentation head if the flag is provided")
 
     # Loss
+    # 是否启用辅助损失
     parser.add_argument('--no_aux_loss', dest='aux_loss', action='store_false',
                         help="Disables auxiliary decoding losses (loss at each layer)")
 
     # * Matcher
+    # 二分图匹配的时候的class的权重
     parser.add_argument('--set_cost_class', default=2, type=float,
                         help="Class coefficient in the matching cost")
+    # 二分图匹配的时候的bbox的权重
     parser.add_argument('--set_cost_bbox', default=5, type=float,
                         help="L1 box coefficient in the matching cost")
+    # 二分图匹配的时候的giou的权重
     parser.add_argument('--set_cost_giou', default=2, type=float,
                         help="giou box coefficient in the matching cost")
 
     # * Loss coefficients
+    # 掩码损失系数，分割任务
     parser.add_argument('--mask_loss_coef', default=1, type=float)
+    # dice损失系数，分割任务
     parser.add_argument('--dice_loss_coef', default=1, type=float)
+    # 分类损失系数
     parser.add_argument('--cls_loss_coef', default=2, type=float)
+    # 边界框bbox损失系数，L1 loss
     parser.add_argument('--bbox_loss_coef', default=5, type=float)
+    # GIOU损失系数
     parser.add_argument('--giou_loss_coef', default=2, type=float)
+    # focal loss的alpha参数
     parser.add_argument('--focal_alpha', default=0.25, type=float)
 
     # dataset parameters
     parser.add_argument('--dataset_file', default='coco')
-    parser.add_argument('--coco_path', default='./data/coco', type=str)
+    parser.add_argument('--coco_path', default='../autodl-tmp/COCO2017', type=str)
     parser.add_argument('--coco_panoptic_path', type=str)
+    # 是否移除困难样本
     parser.add_argument('--remove_difficult', action='store_true')
 
     parser.add_argument('--output_dir', default='',
@@ -121,6 +142,7 @@ def get_args_parser():
                         help='start epoch')
     parser.add_argument('--eval', action='store_true')
     parser.add_argument('--num_workers', default=2, type=int)
+    # 是否将图像缓存到内存中
     parser.add_argument('--cache_mode', default=False, action='store_true', help='whether to cache images on memory')
 
     return parser
