@@ -51,11 +51,13 @@ class MSDeformAttn(nn.Module):
         self.n_levels = n_levels
         self.n_heads = n_heads
         self.n_points = n_points
-
-        self.sampling_offsets = nn.Linear(d_model, n_heads * n_levels * n_points * 2)
-        self.attention_weights = nn.Linear(d_model, n_heads * n_levels * n_points)
-        self.value_proj = nn.Linear(d_model, d_model)
-        self.output_proj = nn.Linear(d_model, d_model)
+        # 输入特征图，输出每个注意力头在每个特征层上面的采样点的偏移量
+        # 偏移量是一个二维表示
+        self.sampling_offsets = nn.Linear(d_model, n_heads * n_levels * n_points * 2) # 用于预测每个注意力头在每个特征层上的采样点偏移量
+        # 用于得到每个采样点的重要性
+        self.attention_weights = nn.Linear(d_model, n_heads * n_levels * n_points) # 用于预测每个采样点的注意力权重
+        self.value_proj = nn.Linear(d_model, d_model) # 用于对输入特征进行投影，生成值（value）向量
+        self.output_proj = nn.Linear(d_model, d_model) # 用于将多头注意力的输出投影回原始维度
 
         self._reset_parameters()
 
@@ -64,7 +66,7 @@ class MSDeformAttn(nn.Module):
         thetas = torch.arange(self.n_heads, dtype=torch.float32) * (2.0 * math.pi / self.n_heads)
         grid_init = torch.stack([thetas.cos(), thetas.sin()], -1)
         grid_init = (grid_init / grid_init.abs().max(-1, keepdim=True)[0]).view(self.n_heads, 1, 1, 2).repeat(1, self.n_levels, self.n_points, 1)
-        for i in range(self.n_points):
+        for i in range(self.n_points): # 这里为什么要这样初始化？
             grid_init[:, :, i, :] *= i + 1
         with torch.no_grad():
             self.sampling_offsets.bias = nn.Parameter(grid_init.view(-1))

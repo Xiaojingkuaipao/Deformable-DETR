@@ -51,8 +51,8 @@ class DeformableDETR(nn.Module):
         self.num_queries = num_queries
         self.transformer = transformer
         hidden_dim = transformer.d_model
-        self.class_embed = nn.Linear(hidden_dim, num_classes)
-        self.bbox_embed = MLP(hidden_dim, hidden_dim, 4, 3)
+        self.class_embed = nn.Linear(hidden_dim, num_classes) # 类别分类头
+        self.bbox_embed = MLP(hidden_dim, hidden_dim, 4, 3) # 边界框回归头
         self.num_feature_levels = num_feature_levels
         if not two_stage:
             self.query_embed = nn.Embedding(num_queries, hidden_dim*2)
@@ -71,7 +71,7 @@ class DeformableDETR(nn.Module):
                     nn.GroupNorm(32, hidden_dim),
                 ))
                 in_channels = hidden_dim
-            self.input_proj = nn.ModuleList(input_proj_list)
+            self.input_proj = nn.ModuleList(input_proj_list) # 把特征图的通道数都变成256
         else:
             self.input_proj = nn.ModuleList([
                 nn.Sequential(
@@ -93,21 +93,22 @@ class DeformableDETR(nn.Module):
             nn.init.constant_(proj[0].bias, 0)
 
         # if two-stage, the last class_embed and bbox_embed is for region proposal generation
+        # 这句话什么意思？没懂？为什么two_stage就要+1
         num_pred = (transformer.decoder.num_layers + 1) if two_stage else transformer.decoder.num_layers
         if with_box_refine:
-            self.class_embed = _get_clones(self.class_embed, num_pred)
-            self.bbox_embed = _get_clones(self.bbox_embed, num_pred)
+            self.class_embed = _get_clones(self.class_embed, num_pred) # 如果逐层refine bbox 那么最后一层分类头重复多次，深拷贝
+            self.bbox_embed = _get_clones(self.bbox_embed, num_pred) # 如果逐层refine那么最后一层bbox回归头重复多次，深拷贝
             nn.init.constant_(self.bbox_embed[0].layers[-1].bias.data[2:], -2.0)
             # hack implementation for iterative bounding box refinement
-            self.transformer.decoder.bbox_embed = self.bbox_embed
+            self.transformer.decoder.bbox_embed = self.bbox_embed # decoder中加上7层bbox回归头 用于逐层refine bbox
         else:
             nn.init.constant_(self.bbox_embed.layers[-1].bias.data[2:], -2.0)
             self.class_embed = nn.ModuleList([self.class_embed for _ in range(num_pred)])
             self.bbox_embed = nn.ModuleList([self.bbox_embed for _ in range(num_pred)])
             self.transformer.decoder.bbox_embed = None
-        if two_stage:
+        if two_stage: # 如果refine bbox的话就只在decoder进行框回归 如果加上two stage就再加上类别回归
             # hack implementation for two-stage
-            self.transformer.decoder.class_embed = self.class_embed
+            self.transformer.decoder.class_embed = self.class_embed # 两阶段的时候把decoder中加上分类头
             for box_embed in self.bbox_embed:
                 nn.init.constant_(box_embed.layers[-1].bias.data[2:], 0.0)
 
@@ -475,7 +476,7 @@ def build(args):
             aux_weight_dict.update({k + f'_{i}': v for k, v in weight_dict.items()})
         aux_weight_dict.update({k + f'_enc': v for k, v in weight_dict.items()})
         weight_dict.update(aux_weight_dict)
-
+    #         标签损失，目标框损失，   约束预测的目标数量，它衡量模型预测的目标数量和真实目标数量之间的差异
     losses = ['labels', 'boxes', 'cardinality']
     if args.masks:
         losses += ["masks"]

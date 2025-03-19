@@ -132,7 +132,7 @@ def get_args_parser():
 
     # dataset parameters
     parser.add_argument('--dataset_file', default='coco')
-    parser.add_argument('--coco_path', default='../autodl-tmp/COCO2017', type=str)
+    parser.add_argument('--coco_path', default='../COCO2017', type=str)
     parser.add_argument('--coco_panoptic_path', type=str)
     # 是否移除困难样本
     parser.add_argument('--remove_difficult', action='store_true')
@@ -187,8 +187,8 @@ def main(args):
             sampler_train = samplers.DistributedSampler(dataset_train)
             sampler_val = samplers.DistributedSampler(dataset_val, shuffle=False)
     else:
-        sampler_train = torch.utils.data.RandomSampler(dataset_train)
-        sampler_val = torch.utils.data.SequentialSampler(dataset_val)
+        sampler_train = torch.utils.data.RandomSampler(dataset_train) # 训练集随机采样
+        sampler_val = torch.utils.data.SequentialSampler(dataset_val) # 验证集顺序采样
 
     batch_sampler_train = torch.utils.data.BatchSampler(
         sampler_train, args.batch_size, drop_last=True)
