@@ -100,11 +100,11 @@ class DeformableTransformer(nn.Module):
             grid = torch.cat([grid_x.unsqueeze(-1), grid_y.unsqueeze(-1)], -1)
 
             scale = torch.cat([valid_W.unsqueeze(-1), valid_H.unsqueeze(-1)], 1).view(N_, 1, 1, 2)
-            grid = (grid.unsqueeze(0).expand(N_, -1, -1, -1) + 0.5) / scale
+            grid = (grid.unsqueeze(0).expand(N_, -1, -1, -1) + 0.5) / scale # 中心点坐标 lvl越小的特征图wh越小，越适合找小目标，lvl越大的特征图wh越大，越适合找大目标
             wh = torch.ones_like(grid) * 0.05 * (2.0 ** lvl)
             proposal = torch.cat((grid, wh), -1).view(N_, -1, 4)
             proposals.append(proposal)
-            _cur += (H_ * W_)
+            _cur += (H_ * W_) # 遍历四张特征图，以每张特征图上的有效像素点为中心生成了proposal
         output_proposals = torch.cat(proposals, 1)
         output_proposals_valid = ((output_proposals > 0.01) & (output_proposals < 0.99)).all(-1, keepdim=True)
         output_proposals = torch.log(output_proposals / (1 - output_proposals))
@@ -112,19 +112,21 @@ class DeformableTransformer(nn.Module):
         output_proposals = output_proposals.masked_fill(~output_proposals_valid, float('inf'))
 
         output_memory = memory
-        output_memory = output_memory.masked_fill(memory_padding_mask.unsqueeze(-1), float(0))
-        output_memory = output_memory.masked_fill(~output_proposals_valid, float(0))
+        output_memory = output_memory.masked_fill(memory_padding_mask.unsqueeze(-1), float(0)) # 把padding过滤掉
+        output_memory = output_memory.masked_fill(~output_proposals_valid, float(0)) # 把边缘像素以及过小的框过滤掉
         output_memory = self.enc_output_norm(self.enc_output(output_memory))
-        return output_memory, output_proposals
+        return output_memory, output_proposals # 为每个像素点生成候选框
 
     def get_valid_ratio(self, mask):
-        _, H, W = mask.shape
-        valid_H = torch.sum(~mask[:, :, 0], 1)
-        valid_W = torch.sum(~mask[:, 0, :], 1)
-        valid_ratio_h = valid_H.float() / H
-        valid_ratio_w = valid_W.float() / W
+        _, H, W = mask.shape # 得到去除掩码之后的sample的宽高比
+        # mask[:,:,0] 取到所有样本的第0列 [bs, H]
+        # mask[:,0,:] 取到所有样本的第0行 [bs, W]
+        valid_H = torch.sum(~mask[:, :, 0], 1) # [bs,] 每个样本的有效高
+        valid_W = torch.sum(~mask[:, 0, :], 1) # [bs,] 每个样本的有效宽度
+        valid_ratio_h = valid_H.float() / H # [bs,] 每个样本的有效高的比例
+        valid_ratio_w = valid_W.float() / W # [bs,] 每个样本的有效宽的比例
         valid_ratio = torch.stack([valid_ratio_w, valid_ratio_h], -1)
-        return valid_ratio
+        return valid_ratio # [bs, 2]每个样本的有效高宽比
 
     def forward(self, srcs, masks, pos_embeds, query_embed=None):
         assert self.two_stage or query_embed is not None
@@ -150,9 +152,10 @@ class DeformableTransformer(nn.Module):
         lvl_pos_embed_flatten = torch.cat(lvl_pos_embed_flatten, 1)
         spatial_shapes = torch.as_tensor(spatial_shapes, dtype=torch.long, device=src_flatten.device)
         level_start_index = torch.cat((spatial_shapes.new_zeros((1, )), spatial_shapes.prod(1).cumsum(0)[:-1]))
-        valid_ratios = torch.stack([self.get_valid_ratio(m) for m in masks], 1)
+        valid_ratios = torch.stack([self.get_valid_ratio(m) for m in masks], 1) # [bs, n_lvl, 2]
 
         # encoder
+        # [bs, 像素点总数, d_model]
         memory = self.encoder(src_flatten, spatial_shapes, level_start_index, valid_ratios, lvl_pos_embed_flatten, mask_flatten)
 
         # prepare input for decoder
@@ -162,13 +165,13 @@ class DeformableTransformer(nn.Module):
 
             # hack implementation for two-stage Deformable DETR
             enc_outputs_class = self.decoder.class_embed[self.decoder.num_layers](output_memory)
-            enc_outputs_coord_unact = self.decoder.bbox_embed[self.decoder.num_layers](output_memory) + output_proposals
+            enc_outputs_coord_unact = self.decoder.bbox_embed[self.decoder.num_layers](output_memory) + output_proposals # 这里预测的是偏移量，与初始位置相加得到框
 
             topk = self.two_stage_num_proposals
-            topk_proposals = torch.topk(enc_outputs_class[..., 0], topk, dim=1)[1]
-            topk_coords_unact = torch.gather(enc_outputs_coord_unact, 1, topk_proposals.unsqueeze(-1).repeat(1, 1, 4))
-            topk_coords_unact = topk_coords_unact.detach()
-            reference_points = topk_coords_unact.sigmoid()
+            topk_proposals = torch.topk(enc_outputs_class[..., 0], topk, dim=1)[1] # 每个batch中类别0分数最高的300个的索引
+            topk_coords_unact = torch.gather(enc_outputs_coord_unact, 1, topk_proposals.unsqueeze(-1).repeat(1, 1, 4)) # 把回归框类别topk的那些框拿出来
+            topk_coords_unact = topk_coords_unact.detach() # 从计算图中拿出来，防止梯度回传
+            reference_points = topk_coords_unact.sigmoid() # 归一化
             init_reference_out = reference_points
             pos_trans_out = self.pos_trans_norm(self.pos_trans(self.get_proposal_pos_embed(topk_coords_unact)))
             query_embed, tgt = torch.split(pos_trans_out, c, dim=2)
@@ -179,7 +182,7 @@ class DeformableTransformer(nn.Module):
             reference_points = self.reference_points(query_embed).sigmoid()
             init_reference_out = reference_points
 
-        # decoder
+        # decoder 中间各层的输出以及中间各层输出的框
         hs, inter_references = self.decoder(tgt, reference_points, memory,
                                             spatial_shapes, level_start_index, valid_ratios, query_embed, mask_flatten)
 
@@ -240,15 +243,16 @@ class DeformableTransformerEncoder(nn.Module):
     @staticmethod
     def get_reference_points(spatial_shapes, valid_ratios, device):
         reference_points_list = []
-        for lvl, (H_, W_) in enumerate(spatial_shapes):
-
+        for lvl, (H_, W_) in enumerate(spatial_shapes): # 特征图的宽高
+            # 生成从0.5 ~ H-0.5的H个坐标以及从0.5 ~ W - 0.5的W个坐标并生成网格
+            # ref_y [h, w] ref_x [h, w]
             ref_y, ref_x = torch.meshgrid(torch.linspace(0.5, H_ - 0.5, H_, dtype=torch.float32, device=device),
                                           torch.linspace(0.5, W_ - 0.5, W_, dtype=torch.float32, device=device))
-            ref_y = ref_y.reshape(-1)[None] / (valid_ratios[:, None, lvl, 1] * H_)
-            ref_x = ref_x.reshape(-1)[None] / (valid_ratios[:, None, lvl, 0] * W_)
-            ref = torch.stack((ref_x, ref_y), -1)
+            ref_y = ref_y.reshape(-1)[None] / (valid_ratios[:, None, lvl, 1] * H_) # [bs, hw] 做归一化，得到有效高度，然后再除有效高度
+            ref_x = ref_x.reshape(-1)[None] / (valid_ratios[:, None, lvl, 0] * W_) # [bs, hw] 做归一化，得到有效宽度，然后再除有效宽度
+            ref = torch.stack((ref_x, ref_y), -1) # 在最后一维做拼接，把x和y拼到一起 [bs, hw, 2]
             reference_points_list.append(ref)
-        reference_points = torch.cat(reference_points_list, 1)
+        reference_points = torch.cat(reference_points_list, 1) # [bs, 所有特征图像素总数, 2]
         reference_points = reference_points[:, :, None] * valid_ratios[:, None]
         return reference_points
 

@@ -155,6 +155,11 @@ class DeformableDETR(nn.Module):
         query_embeds = None
         if not self.two_stage:
             query_embeds = self.query_embed.weight
+        # 各层的输出[num_layers, bs, 300, d_model]
+        # 初始化的参考点 [bs, 300, 4]
+        # 中间各层的输出框 [num_layers, bs, 300, 4]
+        # encoder头的输出[bs, num_pixels, 91]
+        # 未归一化之前的参考点坐标 [bs, num_pixels, 4]
         hs, init_reference, inter_references, enc_outputs_class, enc_outputs_coord_unact = self.transformer(srcs, masks, pos, query_embeds)
 
         outputs_classes = []
