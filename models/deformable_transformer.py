@@ -100,20 +100,20 @@ class DeformableTransformer(nn.Module):
             grid = torch.cat([grid_x.unsqueeze(-1), grid_y.unsqueeze(-1)], -1)
 
             scale = torch.cat([valid_W.unsqueeze(-1), valid_H.unsqueeze(-1)], 1).view(N_, 1, 1, 2)
-            grid = (grid.unsqueeze(0).expand(N_, -1, -1, -1) + 0.5) / scale # 中心点坐标 lvl越小的特征图wh越小，越适合找小目标，lvl越大的特征图wh越大，越适合找大目标
-            wh = torch.ones_like(grid) * 0.05 * (2.0 ** lvl)
+            grid = (grid.unsqueeze(0).expand(N_, -1, -1, -1) + 0.5) / scale # 中心点坐标
+            wh = torch.ones_like(grid) * 0.05 * (2.0 ** lvl) # lvl越小的特征图wh越小，越适合找小目标，lvl越大的特征图wh越大，越适合找大目标
             proposal = torch.cat((grid, wh), -1).view(N_, -1, 4)
             proposals.append(proposal)
             _cur += (H_ * W_) # 遍历四张特征图，以每张特征图上的有效像素点为中心生成了proposal
         output_proposals = torch.cat(proposals, 1)
-        output_proposals_valid = ((output_proposals > 0.01) & (output_proposals < 0.99)).all(-1, keepdim=True)
-        output_proposals = torch.log(output_proposals / (1 - output_proposals))
-        output_proposals = output_proposals.masked_fill(memory_padding_mask.unsqueeze(-1), float('inf'))
-        output_proposals = output_proposals.masked_fill(~output_proposals_valid, float('inf'))
+        output_proposals_valid = ((output_proposals > 0.01) & (output_proposals < 0.99)).all(-1, keepdim=True) # 筛选掉过于边缘以及过大或者过小的框
+        output_proposals = torch.log(output_proposals / (1 - output_proposals)) # 反归一化
+        output_proposals = output_proposals.masked_fill(memory_padding_mask.unsqueeze(-1), float('inf')) # 把padding的部分mask掉
+        output_proposals = output_proposals.masked_fill(~output_proposals_valid, float('inf')) # 把过于边缘以及过大过小的proposal过滤掉
 
         output_memory = memory
         output_memory = output_memory.masked_fill(memory_padding_mask.unsqueeze(-1), float(0)) # 把padding过滤掉
-        output_memory = output_memory.masked_fill(~output_proposals_valid, float(0)) # 把边缘像素以及过小的框过滤掉
+        output_memory = output_memory.masked_fill(~output_proposals_valid, float(0)) # 把边缘像素以及过小过大的框过滤掉
         output_memory = self.enc_output_norm(self.enc_output(output_memory))
         return output_memory, output_proposals # 为每个像素点生成候选框
 
@@ -172,7 +172,7 @@ class DeformableTransformer(nn.Module):
             topk_coords_unact = torch.gather(enc_outputs_coord_unact, 1, topk_proposals.unsqueeze(-1).repeat(1, 1, 4)) # 把回归框类别topk的那些框拿出来
             topk_coords_unact = topk_coords_unact.detach() # 从计算图中拿出来，防止梯度回传
             reference_points = topk_coords_unact.sigmoid() # 归一化
-            init_reference_out = reference_points
+            init_reference_out = reference_points # 初始化的框
             pos_trans_out = self.pos_trans_norm(self.pos_trans(self.get_proposal_pos_embed(topk_coords_unact)))
             query_embed, tgt = torch.split(pos_trans_out, c, dim=2)
         else:
