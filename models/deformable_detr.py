@@ -230,8 +230,8 @@ class SetCriterion(nn.Module):
         assert 'pred_logits' in outputs
         src_logits = outputs['pred_logits']
 
-        idx = self._get_src_permutation_idx(indices)
-        target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])
+        idx = self._get_src_permutation_idx(indices) # batch_idx, src_idx
+        target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)]) # batch中的真实标签[num_bbox,]
         target_classes = torch.full(src_logits.shape[:2], self.num_classes,
                                     dtype=torch.int64, device=src_logits.device)
         target_classes[idx] = target_classes_o
@@ -356,7 +356,7 @@ class SetCriterion(nn.Module):
 
         # Compute all the requested losses
         losses = {}
-        for loss in self.losses:
+        for loss in self.losses: # 计算各种损失
             kwargs = {}
             losses.update(self.get_loss(loss, outputs, targets, indices, num_boxes, **kwargs))
 
